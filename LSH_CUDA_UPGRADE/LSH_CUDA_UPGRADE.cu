@@ -11,6 +11,8 @@
 #define ROTL(x,r)   ((x) << (r)) | ((x) >> (32-r)) 
 #define ROTR(x,r)   ((x) >> (r)) | ((x) << (32-r)) 
 
+#define us_ROTL_SC(x, r)    ((x) << (r)) | ((x) >> (64-r)) 
+
 __device__ static const UINT g_StepConstants[208] = {
    0x917caf90, 0x6c1b10a2, 0x6f352943, 0xcf778243, 0x2ceb7472, 0x29e96ff2, 0x8a9ba428, 0x2eeb2642,
    0x0e2c4021, 0x872bb30e, 0xa45e6cb2, 0x46f9c612, 0x185fe69e, 0x1359621b, 0x263fccb2, 0x1a116870,
@@ -40,7 +42,7 @@ __device__ static const UINT g_StepConstants[208] = {
    0x592c0f3b, 0x947c5f77, 0x6fff49b9, 0xf71a7e5a, 0x1de8c0f5, 0xc2569600, 0xc4e4ac8c, 0x823c9ce1
 };
 
-__device__ static void load_msg_blk(LSH_internal* i_state, const UINT* msgblk)
+__device__ static inline void load_msg_blk(LSH_internal* i_state, const UINT* msgblk)
 {
     i_state->submsg_e_l[0] = (msgblk[0]);
     i_state->submsg_e_l[1] = (msgblk[1]);
@@ -126,23 +128,9 @@ __device__ static void msg_exp_odd(LSH_internal* i_state)
     i_state->submsg_o_r[5] = i_state->submsg_e_r[5] + temp;
 }
 
-__device__ static void load_sc(const UINT** p_const_v, UINT i)
+__device__ static inline void load_sc(const UINT** p_const_v, UINT i)
 {
-    UINT Get_FirstStepConstants[8] = { 0x917caf90, 0x6c1b10a2, 0x6f352943, 0xcf778243, 0x2ceb7472, 0x29e96ff2, 0x8a9ba428, 0x2eeb2642};
-
-    UINT sv_Q_i = 0, sv_R_i = 0, sv_SC = 0;
-
-    sv_Q_i = i / sv_Q_i;
-    sv_R_i = i % sv_R_i;
-
-    for (int k = 0; k < sv_Q_i; k++)
-    {
-        sv_SC = 
-    }
-
-    //*p_const_v = &g_StepConstants[i];
-
-
+    *p_const_v = &g_StepConstants[i];
 }
 
 __device__ static void msg_add_even(UINT* cv_l, UINT* cv_r, LSH_internal* i_state)
@@ -335,7 +323,7 @@ __device__ void LSH_update(LSH_Info* Info, const BYTE* pt, UINT pt_byte_len)
 
     if (pt_len + remain_pt_byte < LSH_BLOCK_LEN)
     {
-        memcpy(Info->sv_last_pt + remain_pt_byte, pt, pt_len);
+        memcpy((UCHAR_PTR)Info->sv_last_pt + remain_pt_byte, pt, pt_len);
         Info->remain_byte_len += (UINT)pt_byte_len;
         return;
     }
@@ -350,7 +338,7 @@ __device__ void LSH_update(LSH_Info* Info, const BYTE* pt, UINT pt_byte_len)
         remain_pt_byte = 0;
     }
 
-    memcpy(Info->sv_last_pt, pt, pt_len);
+    memcpy((UCHAR_PTR)Info->sv_last_pt, pt, pt_len);
     Info->remain_byte_len = (UINT)pt_len;
 
     return;
@@ -386,7 +374,7 @@ __global__ void make_hash_val(LSH_Info* Info, BYTE* pt, BYTE* sv_hashval)
     memcpy(us_Info, Info, sizeof(LSH_Info));
 
     LSH_Init(us_Info);
-    LSH_update(us_Info, pt + (tid * TEST_PT_SIZE), 8);
+    LSH_update(us_Info, pt + (tid * TEST_PT_SIZE), TEST_PT_SIZE);
     LSH_final(us_Info, sv_hashval + tid * LSH_HASH_LEN);
 }
 
@@ -395,6 +383,7 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     LSH_Info* info = NULL;
     BYTE* test_pt = NULL;
     BYTE* sv_hashval = NULL;
+    BYTE* us_cpu_pt = NULL;
 
     cudaEvent_t start, stop;
     float elapsed_time_ms = 0.0f;
@@ -402,19 +391,16 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     info = (LSH_Info*)malloc(sizeof(LSH_Info));
     test_pt = (BYTE*)malloc(sizeof(BYTE) * TEST_PT_SIZE * Blocksize * Threadsize);
     sv_hashval = (BYTE*)malloc(sizeof(BYTE) * Blocksize * Threadsize * LSH_HASH_LEN);
+    us_cpu_pt = (BYTE*)malloc(sizeof(BYTE) * TEST_PT_SIZE * Blocksize * Threadsize);
 
     int i, k = 0;
 
     for (i = 0; i < Blocksize * Threadsize; i++)
     {
-        test_pt[TEST_PT_SIZE * i + 0] = (BYTE)0;
-        test_pt[TEST_PT_SIZE * i + 1] = (BYTE)1;
-        test_pt[TEST_PT_SIZE * i + 2] = (BYTE)2;
-        test_pt[TEST_PT_SIZE * i + 3] = (BYTE)3;
-        test_pt[TEST_PT_SIZE * i + 4] = (BYTE)4;
-        test_pt[TEST_PT_SIZE * i + 5] = (BYTE)5;
-        test_pt[TEST_PT_SIZE * i + 6] = (BYTE)6;
-        test_pt[TEST_PT_SIZE * i + 7] = (BYTE)7;
+        for (int j = 0; j < TEST_PT_SIZE; j++)
+        {
+            test_pt[TEST_PT_SIZE * i + j] = BYTE(j);
+        }
     }
 
     BYTE* GPU_pt;
@@ -425,6 +411,14 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     cudaMalloc((void**)&GPU_sv_hashval, sizeof(BYTE) * Blocksize * Threadsize * LSH_HASH_LEN);
     cudaMalloc((void**)&GPU_info, sizeof(LSH_Info));
 
+    /*for (i = 0; i < TEST_PT_SIZE; i++)
+    {
+        for (int j = 0; j < Blocksize * Threadsize; j++)
+        {
+            us_cpu_pt[k++] = test_pt[TEST_PT_SIZE * j + i];
+        }
+    }
+    k = 0;*/
 
     printf("\n\nStart...\n");
     cudaMemcpy(GPU_pt, test_pt, sizeof(BYTE) * TEST_PT_SIZE * Blocksize * Threadsize, cudaMemcpyHostToDevice);
@@ -434,7 +428,7 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     cudaEventCreate(&stop);
     cudaEventRecord(start, 0);
     for (int x = 0; x < 1000; x++) {
-        make_hash_val << <Blocksize, Threadsize >> > (GPU_info, GPU_pt, GPU_sv_hashval);
+        make_hash_val <<<Blocksize, Threadsize>>> (GPU_info, GPU_pt, GPU_sv_hashval);
     }
     cudaEventRecord(stop, 0);
     cudaDeviceSynchronize();
@@ -446,7 +440,7 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     elapsed_time_ms = (Blocksize * Threadsize * LSH_BLOCK_LEN * sizeof(BYTE)) / elapsed_time_ms;
     elapsed_time_ms *= 1000;
     elapsed_time_ms /= (1024 * 1024 * 1024);
-    printf("File size = %d MB, Grid : %d, Block : %d, Performance : %4.2f GB/s\n", (Blocksize * Threadsize * LSH_BLOCK_LEN) / (1024 * 1024), Blocksize, Threadsize, elapsed_time_ms);
+    printf("File size = %lld MB, Grid : %ld, Block : %ld, Performance : %4.2f GB/s\n", (Blocksize * Threadsize * LSH_BLOCK_LEN) / (1024 * 1024), Blocksize, Threadsize, elapsed_time_ms);
     getchar();
     getchar();
 
@@ -478,7 +472,7 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
 
 int main()
 {
-    ULL Blocksize = 1024, Threadsize = 128;
+    ULL Blocksize = 1024, Threadsize = 512;
 
     test_LSH_GPU(Blocksize, Threadsize);
 
