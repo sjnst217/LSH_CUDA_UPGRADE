@@ -11,8 +11,6 @@
 #define ROTL(x,r)   ((x) << (r)) | ((x) >> (32-r)) 
 #define ROTR(x,r)   ((x) >> (r)) | ((x) << (32-r)) 
 
-#define us_ROTL_SC(x, r)    ((x) << (r)) | ((x) >> (64-r)) 
-
 __device__ static const UINT g_StepConstants[208] = {
    0x917caf90, 0x6c1b10a2, 0x6f352943, 0xcf778243, 0x2ceb7472, 0x29e96ff2, 0x8a9ba428, 0x2eeb2642,
    0x0e2c4021, 0x872bb30e, 0xa45e6cb2, 0x46f9c612, 0x185fe69e, 0x1359621b, 0x263fccb2, 0x1a116870,
@@ -259,7 +257,7 @@ __device__ static void final(LSH_Info* Info)
 
 __device__ void LSH_Compress(LSH_Info* ctx, UINT_PTR sv_pt)
 {
-    UINT i;                               //uint32_t = unsigned int = lsh_uint
+    UINT i;
     LSH_internal i_state[1];
 
     const UINT* const_v = NULL;
@@ -314,31 +312,38 @@ __device__ void LSH_update(LSH_Info* Info, const BYTE* pt, UINT pt_byte_len)
     UINT remain_pt_byte;
     UINT pt_len = pt_byte_len;
 
+    BYTE TEST_SV_PT[TEST_PT_SIZE] = { 0 };
+
     if (pt_byte_len == 0)
     {
         return;
+    }
+
+    for (int i = 0; i < TEST_PT_SIZE; i++)
+    {
+        TEST_SV_PT[i] = pt[i * blockDim.x * gridDim.x];
     }
 
     remain_pt_byte = Info->remain_byte_len;
 
     if (pt_len + remain_pt_byte < LSH_BLOCK_LEN)
     {
-        memcpy((UCHAR_PTR)Info->sv_last_pt + remain_pt_byte, pt, pt_len);
+        memcpy((UCHAR_PTR)Info->sv_last_pt + remain_pt_byte, TEST_SV_PT, pt_len);
         Info->remain_byte_len += (UINT)pt_byte_len;
         return;
     }
 
     while (pt_len + remain_pt_byte >= LSH_BLOCK_LEN)
     {
-        memcpy((UCHAR_PTR)(Info->sv_pt), (UCHAR_PTR)pt, (int)LSH_BLOCK_LEN);
+        memcpy((UCHAR_PTR)(Info->sv_pt), TEST_SV_PT + i * LSH_BLOCK_LEN, (int)LSH_BLOCK_LEN);
         LSH_Compress(Info, (UINT_PTR)Info->sv_pt);
 
-        pt += LSH_BLOCK_LEN;
+        i++;
         pt_len -= (LSH_BLOCK_LEN - remain_pt_byte);
         remain_pt_byte = 0;
     }
 
-    memcpy((UCHAR_PTR)Info->sv_last_pt, pt, pt_len);
+    memcpy((UCHAR_PTR)Info->sv_last_pt, TEST_SV_PT + i * LSH_BLOCK_LEN, pt_len);
     Info->remain_byte_len = (UINT)pt_len;
 
     return;
@@ -374,8 +379,8 @@ __global__ void make_hash_val(LSH_Info* Info, BYTE* pt, BYTE* sv_hashval)
     memcpy(us_Info, Info, sizeof(LSH_Info));
 
     LSH_Init(us_Info);
-    LSH_update(us_Info, pt + (tid * TEST_PT_SIZE), TEST_PT_SIZE);
-    LSH_final(us_Info, sv_hashval + tid * LSH_HASH_LEN);
+    LSH_update(us_Info, pt + tid, TEST_PT_SIZE);
+    LSH_final(us_Info, sv_hashval + (tid * LSH_HASH_LEN));
 }
 
 void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
@@ -411,24 +416,24 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     cudaMalloc((void**)&GPU_sv_hashval, sizeof(BYTE) * Blocksize * Threadsize * LSH_HASH_LEN);
     cudaMalloc((void**)&GPU_info, sizeof(LSH_Info));
 
-    /*for (i = 0; i < TEST_PT_SIZE; i++)
+    for (i = 0; i < TEST_PT_SIZE; i++)
     {
         for (int j = 0; j < Blocksize * Threadsize; j++)
         {
             us_cpu_pt[k++] = test_pt[TEST_PT_SIZE * j + i];
         }
     }
-    k = 0;*/
+    k = 0;
 
     printf("\n\nStart...\n");
-    cudaMemcpy(GPU_pt, test_pt, sizeof(BYTE) * TEST_PT_SIZE * Blocksize * Threadsize, cudaMemcpyHostToDevice);
+    cudaMemcpy(GPU_pt, us_cpu_pt, sizeof(BYTE) * TEST_PT_SIZE * Blocksize * Threadsize, cudaMemcpyHostToDevice);
     cudaMemcpy(GPU_info, info, sizeof(LSH_Info), cudaMemcpyHostToDevice);
 
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     cudaEventRecord(start, 0);
     for (int x = 0; x < 1000; x++) {
-        make_hash_val <<<Blocksize, Threadsize>>> (GPU_info, GPU_pt, GPU_sv_hashval);
+        make_hash_val << <Blocksize, Threadsize >> > (GPU_info, GPU_pt, GPU_sv_hashval);
     }
     cudaEventRecord(stop, 0);
     cudaDeviceSynchronize();
@@ -472,7 +477,7 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
 
 int main()
 {
-    ULL Blocksize = 1024, Threadsize = 512;
+    ULL Blocksize = 1024, Threadsize = 128;
 
     test_LSH_GPU(Blocksize, Threadsize);
 

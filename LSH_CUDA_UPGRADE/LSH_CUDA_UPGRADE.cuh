@@ -13,7 +13,7 @@ typedef unsigned long long ULL;
 #define LSH_BLOCK_LEN		128
 #define LSH_BLOCK_BIT_LEN	1024
 #define LSH_HASH_LEN		32
-#define TEST_PT_SIZE		8
+#define TEST_PT_SIZE		129
 
 typedef struct
 {
