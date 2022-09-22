@@ -78,6 +78,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <CudaCompile Include="LSH_CUDA_UPGRADE.cu" />
+    <CudaCompile Include="LSH_CUDA_UPGRADE_control.cu">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="LSH_CUDA_UPGRADE.cuh" />
