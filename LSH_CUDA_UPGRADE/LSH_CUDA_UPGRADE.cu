@@ -433,7 +433,7 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     cudaEventCreate(&stop);
     cudaEventRecord(start, 0);
     for (int x = 0; x < 1000; x++) {
-        make_hash_val << <Blocksize, Threadsize >> > (GPU_info, GPU_pt, GPU_sv_hashval);
+        make_hash_val <<<Blocksize, Threadsize >>> (GPU_info, GPU_pt, GPU_sv_hashval);
     }
     cudaEventRecord(stop, 0);
     cudaDeviceSynchronize();
@@ -471,6 +471,16 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
             k++;
         }
     }
+
+    cudaFree(GPU_pt);
+    cudaFree(GPU_info);
+    cudaFree(GPU_sv_hashval);
+    free(test_pt);
+    free(info);
+    free(sv_hashval);
+    free(us_cpu_pt);
+
+    printf("LSH_SUCCESS\n");
 
     return;
 }

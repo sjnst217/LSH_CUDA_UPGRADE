@@ -381,7 +381,6 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     LSH_Info* info = NULL;
     BYTE* test_pt = NULL;
     BYTE* sv_hashval = NULL;
-    BYTE* us_cpu_pt = NULL;
 
     cudaEvent_t start, stop;
     float elapsed_time_ms = 0.0f;
@@ -389,7 +388,6 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     info = (LSH_Info*)malloc(sizeof(LSH_Info));
     test_pt = (BYTE*)malloc(sizeof(BYTE) * TEST_PT_SIZE * Blocksize * Threadsize);
     sv_hashval = (BYTE*)malloc(sizeof(BYTE) * Blocksize * Threadsize * LSH_HASH_LEN);
-    us_cpu_pt = (BYTE*)malloc(sizeof(BYTE) * TEST_PT_SIZE * Blocksize * Threadsize);
 
     int i, k = 0;
 
@@ -409,15 +407,6 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     cudaMalloc((void**)&GPU_sv_hashval, sizeof(BYTE) * Blocksize * Threadsize * LSH_HASH_LEN);
     cudaMalloc((void**)&GPU_info, sizeof(LSH_Info));
 
-    /*for (i = 0; i < TEST_PT_SIZE; i++)
-    {
-        for (int j = 0; j < Blocksize * Threadsize; j++)
-        {
-            us_cpu_pt[k++] = test_pt[TEST_PT_SIZE * j + i];
-        }
-    }
-    k = 0;*/
-
     printf("\n\nStart...\n");
     cudaMemcpy(GPU_pt, test_pt, sizeof(BYTE) * TEST_PT_SIZE * Blocksize * Threadsize, cudaMemcpyHostToDevice);
     cudaMemcpy(GPU_info, info, sizeof(LSH_Info), cudaMemcpyHostToDevice);
@@ -431,7 +420,7 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
     cudaEventRecord(stop, 0);
     cudaDeviceSynchronize();
     cudaEventSynchronize(start);
-    cudaEventSynchronize(±×¸¸);
+    cudaEventSynchronize(stop);
     cudaEventElapsedTime(&elapsed_time_ms, start, stop);
     cudaMemcpy(sv_hashval, GPU_sv_hashval, sizeof(BYTE) * Blocksize * Threadsize * LSH_HASH_LEN, cudaMemcpyDeviceToHost);
     elapsed_time_ms /= 1000;
@@ -444,7 +433,6 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
 
     cudaGetLastError();
     cudaDeviceSynchronize();
-
 
     printf("LSH_HAST_VAL : \n");
     for (i = 0; i < Blocksize * Threadsize * LSH_HASH_LEN; i++)
@@ -464,6 +452,15 @@ void test_LSH_GPU(ULL Blocksize, ULL Threadsize)
             k++;
         }
     }
+
+    cudaFree(GPU_pt);
+    cudaFree(GPU_info);
+    cudaFree(GPU_sv_hashval);
+    free(test_pt);
+    free(info);
+    free(sv_hashval);
+
+    printf("LSH_SUCCESS\n");
 
     return;
 }
